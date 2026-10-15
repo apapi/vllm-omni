@@ -920,6 +920,28 @@ class TestSpeechAPI:
         assert b"Invalid voice" in response.body
 
     @pytest.mark.asyncio
+    async def test_diffusion_speech_reports_audio_format_and_duration(self, mocker: MockerFixture):
+        """Diffusion servers report the same audio headers as the AR path."""
+        mock_engine = mocker.MagicMock()
+        mock_engine.default_sampling_params_list = [OmniDiffusionSamplingParams(extra_args={})]
+
+        async def mock_generate(*args, **kwargs):
+            yield create_mock_audio_output_for_test()
+
+        mock_engine.generate = mocker.MagicMock(side_effect=mock_generate)
+        server = OmniOpenAIServingSpeech.for_diffusion(diffusion_engine=mock_engine, model_name="test-model")
+
+        response = await server.create_speech(OpenAICreateSpeechRequest(input="Hello", response_format="pcm"))
+
+        assert response.status_code == 200
+        # create_mock_audio_output_for_test emits 24000 samples at 24 kHz.
+        assert response.headers["x-audio-sample-rate"] == "24000"
+        assert response.headers["x-audio-channels"] == "1"
+        assert response.headers["x-audio-duration-seconds"] == "1.000"
+        exposed = {h.strip().lower() for h in response.headers["access-control-expose-headers"].split(",")}
+        assert exposed == {"x-audio-sample-rate", "x-audio-channels", "x-audio-duration-seconds"}
+
+    @pytest.mark.asyncio
     async def test_create_diffusion_speech_extra_params(self, mocker: MockerFixture):
         """Test diffusion parameters reach StepScheduler as standard fields."""
         # Mock the engine client

@@ -178,7 +178,8 @@ response headers:
 | `x-vllm-omni-input-audio-tokens` | Reference-audio codec frames, non-zero only for in-context voice cloning. |
 
 Diffusion-mode speech servers route through a separate response path and do not
-emit these headers.
+emit these usage headers. They do report the audio format headers described
+below.
 
 **Raw audio stream** (`stream_format="audio"`). Streams raw audio bytes (PCM or
 WAV) as they are decoded.
