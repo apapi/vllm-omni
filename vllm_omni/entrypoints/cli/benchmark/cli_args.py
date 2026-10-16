@@ -102,7 +102,9 @@ def add_omniinteract_cli_args(parser: argparse.ArgumentParser) -> None:
         help="Reject media longer than this safety limit before decoding.",
     )
     group.add_argument(
-        "--omniinteract-ref-audio", type=_existing_file, help="Reference WAV for native-duplex audio output."
+        "--omniinteract-ref-audio",
+        type=_existing_file,
+        help="Required reference WAV to pin the assistant voice for reproducible native-duplex scoring.",
     )
     group.add_argument(
         "--omniinteract-require-response", action="store_true", help="Fail LISTEN-only functional E2E cases."
@@ -382,6 +384,13 @@ def add_seed_tts_cli_args(parser: argparse.ArgumentParser) -> None:
     """Add CLI arguments for Seed-TTS benchmarks."""
     group = parser.add_argument_group("Seed-TTS Dataset Options")
     group.add_argument(
+        "--seed-tts-reference-as-input",
+        action="store_true",
+        help="Send Seed-TTS reference speech as a real user audio turn alongside the target text, rather than as "
+        "ref_audio/ref_text voice-clone fields. Requires --backend openai-realtime-chat. Audio is normalized to "
+        "mono 24 kHz PCM16; a one-second silent tail is appended and streamed only in server-VAD mode.",
+    )
+    group.add_argument(
         "--seed-tts-locale",
         type=str,
         choices=["en", "zh"],
@@ -471,7 +480,11 @@ def extend_omni_choices(parser: argparse.ArgumentParser) -> None:
                 if extra:
                     action.choices = list(action.choices) + extra
             if action.dest == "backend" and action.choices is not None:
-                extra = [choice for choice in ("openai-image-edits-omni",) if choice not in action.choices]
+                extra = [
+                    choice
+                    for choice in ("openai-image-edits-omni", "openai-realtime-chat")
+                    if choice not in action.choices
+                ]
                 if extra:
                     action.choices = list(action.choices) + extra
 
@@ -554,7 +567,7 @@ def preprocess_serve_args(args: argparse.Namespace) -> None:
         if getattr(args, "endpoint", None) != "/v1/realtime":
             raise ValueError("OmniInteract requires --endpoint /v1/realtime")
         if not getattr(args, "omniinteract_ref_audio", None):
-            raise ValueError("OmniInteract requires --omniinteract-ref-audio")
+            raise ValueError("OmniInteract requires --omniinteract-ref-audio to pin the voice for reproducible scoring")
         if getattr(args, "omniinteract_evaluate", False) and not getattr(args, "omniinteract_judge_model", None):
             raise ValueError("OmniInteract evaluation requires --omniinteract-judge-model")
         if getattr(args, "omniinteract_video_list", None):
