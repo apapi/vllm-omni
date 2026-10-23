@@ -230,7 +230,9 @@ def _audio_format_headers(
         headers[SPEECH_AUDIO_SAMPLE_RATE_HEADER] = str(int(audio_format["sample_rate"]))
         headers[SPEECH_AUDIO_CHANNELS_HEADER] = str(int(audio_format["channels"]))
         exposed += [SPEECH_AUDIO_SAMPLE_RATE_HEADER, SPEECH_AUDIO_CHANNELS_HEADER]
-    if duration_s is not None and duration_s > 0:
+    if duration_s is not None:
+        # ``None`` is an unknown duration and leaves the header out; a clip that
+        # really encoded to zero frames reports ``0.000``.
         headers[SPEECH_AUDIO_DURATION_HEADER] = f"{duration_s:.3f}"
         exposed.append(SPEECH_AUDIO_DURATION_HEADER)
     if not exposed:
@@ -286,7 +288,7 @@ def _encoded_audio_format(audio_response: Any, sample_rate: int, audio: np.ndarr
     return {"sample_rate": int(sample_rate), "channels": _infer_audio_num_channels(np.asarray(audio))}
 
 
-def _audio_duration_seconds(audio_response: AudioResponse) -> float:
+def _audio_duration_seconds(audio_response: AudioResponse) -> float | None:
     """Duration of an encoded chunk, from the encoder's own frame count.
 
     ``AudioChunkMetadata.frame_count`` counts frames after the encoder's speed
@@ -296,11 +298,13 @@ def _audio_duration_seconds(audio_response: AudioResponse) -> float:
     ``audio_metadata`` is optional on the protocol and absent from the audio
     doubles some tests substitute for ``create_audio``, so it is read like
     ``_encoded_audio_format`` does: a missing or empty metadata means the
-    duration is unknown, not that the request failed.
+    duration is unknown, not that the request failed. Unknown duration is
+    ``None`` so callers can tell it apart from a clip that really encoded to
+    zero frames, which reports ``0.0``.
     """
     metadata = getattr(audio_response, "audio_metadata", None)
     if metadata is None:
-        return 0.0
+        return None
     return float(metadata.frame_count) / float(metadata.sample_rate_hz)
 
 
@@ -1825,7 +1829,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         """
         prev_count = 0
         emitted_samples = 0
-        total_audio_s = 0.0
+        total_audio_s: float | None = None
         sample_rate_val = 24000
         first_chunk = True
         first_audio_chunk_s: float | None = None
@@ -1962,7 +1966,9 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                     )
                     audio_response = self.create_audio(audio_obj)
                     audio_bytes = cast(bytes, audio_response.audio_data)
-                    total_audio_s += _audio_duration_seconds(audio_response)
+                    chunk_audio_s = _audio_duration_seconds(audio_response)
+                    if chunk_audio_s is not None:
+                        total_audio_s = chunk_audio_s if total_audio_s is None else total_audio_s + chunk_audio_s
                     record_audio_chunk(audio_bytes, chunk_np, res)
                     if audio_format is not None and not audio_format and audio_bytes:
                         audio_format.update(_encoded_audio_format(audio_response, output_sample_rate, chunk_np))
@@ -1994,7 +2000,9 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                     )
                     audio_response = self.create_audio(audio_obj)
                     audio_bytes = cast(bytes, audio_response.audio_data)
-                    total_audio_s += _audio_duration_seconds(audio_response)
+                    chunk_audio_s = _audio_duration_seconds(audio_response)
+                    if chunk_audio_s is not None:
+                        total_audio_s = chunk_audio_s if total_audio_s is None else total_audio_s + chunk_audio_s
                     record_audio_chunk(audio_bytes, final_chunk, last_audio_result)
                     if audio_format is not None and not audio_format and audio_bytes:
                         audio_format.update(_encoded_audio_format(audio_response, output_sample_rate, final_chunk))
@@ -2028,7 +2036,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                 )
             if mod_metrics is not None:
                 mod_metrics.inc_speech_stream_completed()
-            if collect is not None and total_audio_s > 0:
+            if collect is not None and total_audio_s is not None:
                 # Callers surface this in the terminal ``speech.audio.done`` event.
                 collect["audio_duration_s"] = total_audio_s
             total_ms = (time.perf_counter() - stream_start_s) * 1000.0

@@ -475,6 +475,10 @@ class TestSpeechAPI:
         assert "X-Audio-Duration-Seconds" not in headers
         assert headers["Access-Control-Expose-Headers"] == "X-Audio-Sample-Rate, X-Audio-Channels"
 
+    def test_audio_format_headers_report_zero_duration(self):
+        headers = _audio_format_headers({"sample_rate": 24000, "channels": 1}, 0.0)
+        assert headers["X-Audio-Duration-Seconds"] == "0.000"
+
     def test_audio_duration_seconds_uses_encoder_frame_count(self):
         response = AudioResponse(
             audio_data=b"",
@@ -483,8 +487,24 @@ class TestSpeechAPI:
         )
         assert _audio_duration_seconds(response) == pytest.approx(1.5)
 
-    def test_audio_duration_seconds_without_metadata_is_zero(self):
-        assert _audio_duration_seconds(AudioResponse(audio_data=b"", media_type="audio/wav")) == 0.0
+    def test_audio_duration_seconds_follows_speed_and_resampling(self, mocker: MockerFixture):
+        # 1 s at 24 kHz, sped up 2x and resampled to 16 kHz, is 0.5 s of audio.
+        # This is why the duration comes from the encoder metadata rather than
+        # from the pre-encode waveform.
+        mocker.patch("soundfile.write")
+        audio_obj = CreateAudio(
+            audio_tensor=np.random.rand(24000).astype(np.float32),
+            sample_rate=24000,
+            output_sample_rate=16000,
+            response_format="wav",
+            speed=2.0,
+            base64_encode=False,
+        )
+        response = AudioMixin().create_audio(audio_obj)
+        assert _audio_duration_seconds(response) == pytest.approx(0.5, abs=1e-3)
+
+    def test_audio_duration_seconds_without_metadata_is_unknown(self):
+        assert _audio_duration_seconds(AudioResponse(audio_data=b"", media_type="audio/wav")) is None
 
     def test_build_speech_usage_headers_uses_usage_and_detail_field_names(self):
         usage = SpeechTokenUsage(

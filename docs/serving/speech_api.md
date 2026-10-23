@@ -197,7 +197,7 @@ response headers:
 | --- | --- |
 | `x-audio-sample-rate` | Sample rate of the returned audio in Hz (after any `sample_rate` resampling). |
 | `x-audio-channels` | Channel count of the returned audio. |
-| `x-audio-duration-seconds` | Duration of the returned audio in seconds, to three decimals. Non-streaming responses only: a raw stream sends its headers before the audio is generated, so it cannot report a duration. |
+| `x-audio-duration-seconds` | Duration of the returned audio in seconds, to three decimals. Non-streaming responses only: a raw stream sends its headers before the audio is generated, so it cannot report a duration. A clip that encoded to zero frames reports `0.000`; the header is omitted only when no duration is known. |
 
 Both streaming modes (`stream_format="audio"` and `"sse"`) require
 `response_format="pcm"` or `"wav"`, and `speed` must be `1.0` (or omitted).
@@ -235,6 +235,8 @@ Each event has an `event:` line and a JSON `data:` line:
     `duration` extends the OpenAI event: it is the total length in seconds of
     the audio already sent as `speech.audio.delta` events. Non-streaming
     responses report the same value in the `x-audio-duration-seconds` header.
+    Like that header, it is present for an empty result (`0.0`) and absent only
+    when no duration is known.
 
 - `speech.audio.error` — emitted instead of `speech.audio.done` if generation fails:
 
