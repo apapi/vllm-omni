@@ -235,8 +235,9 @@ Each event has an `event:` line and a JSON `data:` line:
     `duration` extends the OpenAI event: it is the total length in seconds of
     the audio already sent as `speech.audio.delta` events. Non-streaming
     responses report the same value in the `x-audio-duration-seconds` header.
-    Like that header, it is present for an empty result (`0.0`) and absent only
-    when no duration is known.
+    Like that header, it is `0.0` when the encoder reports zero frames and is
+    absent when no duration is known: empty chunks are skipped before encoding,
+    so a stream with no audio reports no duration rather than `0.0`.
 
 - `speech.audio.error` — emitted instead of `speech.audio.done` if generation fails:
 
